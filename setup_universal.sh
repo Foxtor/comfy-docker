@@ -1,173 +1,48 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Iniciando Instalação Universal (O Plano de 1 Milhão)..."
+echo "🚀 Iniciando Instalação Optimizada (Paralelo + Waves)..."
 
-# === 0. Dependências do sistema (apt) ===
+# === 0. Dependências do sistema ===
 if command -v apt-get &> /dev/null; then
     echo "📦 Instalando dependências do sistema..."
     apt-get update && apt-get install -y \
-        git wget ffmpeg libgl1 libglib2.0-0 tar \
+        git wget ffmpeg libgl1 libglib2.0-0 tar aria2 \
         && rm -rf /var/lib/apt/lists/*
 else
-    echo "⚠️  apt-get não disponível — assumindo que as dependências já estão instaladas."
+    echo "⚠️ apt-get não disponível."
 fi
+
+# === Funções ===
+log() { echo -e "\033[1;32m[$(date +%H:%M:%S)]\033[0m $1"; }
+warn() { echo -e "\033[1;33m[$(date +%H:%M:%S)] ⚠️\033[0m $1"; }
+check_space() {
+    local needed=$1
+    local available=$(df -BG /workspace | awk 'NR==2 {print $4}' | tr -d 'G')
+    if [ "$available" -lt "$needed" ]; then
+        warn "Espaço insuficiente! Precisa: ${needed}GB, Tem: ${available}GB"
+        return 1
+    fi
+    return 0
+}
 
 # === Criar pastas ===
 mkdir -p /workspace/ComfyUI/models/{checkpoints,vaes,clip_vision,upscale_models,ipadapter,controlnet,insightface}
 
-# === 1. ComfyUI Base ===
+# =====================================================
+# WAVE 1: LEVE (git clone + pip install)
+# =====================================================
+log "🌊 WAVE 1: Leve (ComfyUI + Custom Nodes)..."
+
 if [ ! -d "/workspace/ComfyUI" ]; then
-    echo "📥 ComfyUI não encontrado. Baixando..."
+    log "📥 Clonando ComfyUI..."
     git clone https://github.com/comfyanonymous/ComfyUI.git /workspace/ComfyUI
-    pip install -r /workspace/ComfyUI/requirements.txt
+    pip install -r /workspace/ComfyUI/requirements.txt -q
 else
-    echo "✅ ComfyUI já instalado."
+    log "✅ ComfyUI já instalado."
 fi
 
-# === 2. CHECKPOINTS (incluindo fish-speech) ===
-echo "🖼️ Verificando Checkpoints..."
-CHECKPOINT1="/workspace/ComfyUI/models/checkpoints/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
-CHECKPOINT2="/workspace/ComfyUI/models/checkpoints/flux1-dev-fp8.safetensors"
-FISH_SPEECH="/workspace/ComfyUI/models/checkpoints/fish-speech.bin"
-
-if [ ! -f "$CHECKPOINT1" ]; then
-    wget -O "$CHECKPOINT1" https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors
-else
-    echo "✅ Juggernaut-XL já baixado."
-fi
-
-if [ ! -f "$CHECKPOINT2" ]; then
-    wget -O "$CHECKPOINT2" https://huggingface.co/lllyasviel/flux1_dev/resolve/main/flux1-dev-fp8.safetensors
-else
-    echo "✅ flux1-dev já baixado."
-fi
-
-if [ ! -f "$FISH_SPEECH" ]; then
-    echo "🧠 Baixando fish-speech checkpoint..."
-    wget -O "$FISH_SPEECH" https://huggingface.co/fishaudio/fish-speech-1.4/resolve/main/fish-speech-1.4-checkpoint.pth
-else
-    echo "✅ fish-speech.bin já baixado."
-fi
-
-# === 3. VAEs ===
-echo "🎨 Verificando VAEs..."
-VAE1="/workspace/ComfyUI/models/vaes/wan_2.1_vae.safetensors"
-VAE2="/workspace/ComfyUI/models/vaes/ae.safetensors"
-
-if [ ! -f "$VAE1" ]; then
-    wget -O "$VAE1" https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
-else
-    echo "✅ wan_2.1_vae já baixado."
-fi
-
-if [ ! -f "$VAE2" ]; then
-    wget -O "$VAE2" https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors
-else
-    echo "✅ ae.safetensors já baixado."
-fi
-
-# === 4. CLIP VISION ===
-echo "👁️ Verificando CLIP Vision..."
-CLIP1="/workspace/ComfyUI/models/clip_vision/clip_vision_h.safetensors"
-CLIP2="/workspace/ComfyUI/models/clip_vision/siglip-so400m-patch14-384.safetensors"
-
-if [ ! -f "$CLIP1" ]; then
-    wget -O "$CLIP1" https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
-else
-    echo "✅ clip_vision_h já baixado."
-fi
-
-if [ ! -f "$CLIP2" ]; then
-    wget -O "$CLIP2" https://huggingface.co/google/siglip-so400m-patch14-384/resolve/main/model.safetensors
-else
-    echo "✅ siglip-so400m já baixado."
-fi
-
-# === 5. UPSCALERS ===
-echo "🔍 Verificando Upscalers..."
-UP1="/workspace/ComfyUI/models/upscale_models/RealESRGAN_x4plus.pth"
-UP2="/workspace/ComfyUI/models/upscale_models/RealESRGAN_x4plus_anime_6B.pth"
-
-if [ ! -f "$UP1" ]; then
-    wget -O "$UP1" https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus.pth
-else
-    echo "✅ RealESRGAN_x4plus já baixado."
-fi
-
-if [ ! -f "$UP2" ]; then
-    wget -O "$UP2" https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus_anime_6B.pth
-else
-    echo "✅ RealESRGAN_x4plus_anime_6B já baixado."
-fi
-
-# === 6. IP-ADAPTER ===
-echo "🔗 Verificando IP-Adapter..."
-IP1="/workspace/ComfyUI/models/ipadapter/ip-adapter_sd15.safetensors"
-IP2="/workspace/ComfyUI/models/ipadapter/ip-adapter_sdxl.safetensors"
-IP3="/workspace/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors"
-
-if [ ! -f "$IP1" ]; then
-    wget -O "$IP1" https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sd15.safetensors
-else
-    echo "✅ ip-adapter_sd15 já baixado."
-fi
-
-if [ ! -f "$IP2" ]; then
-    wget -O "$IP2" https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sdxl.safetensors
-else
-    echo "✅ ip-adapter_sdxl já baixado."
-fi
-
-if [ ! -f "$IP3" ]; then
-    wget -O "$IP3" https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-plus_sdxl_vit-h.safetensors
-else
-    echo "✅ ip-adapter-plus_sdxl_vit-h já baixado."
-fi
-
-# === 7. CONTROLNET ===
-echo "🎛️ Verificando ControlNets..."
-CN1="/workspace/ComfyUI/models/controlnet/dpt_hybrid-midas-501f9c5e.pt"
-CN2="/workspace/ComfyUI/models/controlnet/sketch.pth"
-
-if [ ! -f "$CN1" ]; then
-    wget -O "$CN1" https://huggingface.co/lllyasviel/Annotators/resolve/main/dpt_hybrid-midas-501f9c5e.pt
-else
-    echo "✅ dpt_hybrid-midas já baixado."
-fi
-
-if [ ! -f "$CN2" ]; then
-    wget -O "$CN2" https://huggingface.co/lllyasviel/Annotators/resolve/main/sketch.pth
-else
-    echo "✅ sketch.pth já baixado."
-fi
-
-# === 8. INSIGHTFACE ===
-echo "👤 Verificando InsightFace..."
-IF1="/workspace/ComfyUI/models/insightface/genderage.onnx"
-IF2="/workspace/ComfyUI/models/insightface/2d106det.onnx"
-IF3="/workspace/ComfyUI/models/insightface/glintr100.onnx"
-
-if [ ! -f "$IF1" ]; then
-    wget -O "$IF1" https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/genderage.onnx
-else
-    echo "✅ genderage.onnx já baixado."
-fi
-
-if [ ! -f "$IF2" ]; then
-    wget -O "$IF2" https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/2d106det.onnx
-else
-    echo "✅ 2d106det.onnx já baixado."
-fi
-
-if [ ! -f "$IF3" ]; then
-    wget -O "$IF3" https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/glintr100.onnx
-else
-    echo "✅ glintr100.onnx já baixado."
-fi
-
-# === 9. CUSTOM NODES ===
-echo "🧩 Instalando Custom Nodes..."
+# Custom Nodes (paralelo - todos juntos)
 CUSTOM_NODES_DIR="/workspace/ComfyUI/custom_nodes"
 mkdir -p "$CUSTOM_NODES_DIR"
 cd "$CUSTOM_NODES_DIR"
@@ -206,14 +81,108 @@ NODES=(
 for repo in "${NODES[@]}"; do
     folder=$(basename "$repo" .git)
     if [ ! -d "$folder" ]; then
-        echo "🔄 Clonando $folder..."
-        git clone "$repo"
-        if [ -f "$folder/requirements.txt" ]; then
-            pip install -r "$folder/requirements.txt"
-        fi
-    else
-        echo "⚠️ $folder já existe."
+        git clone -q "$repo" &
     fi
 done
+wait
 
-echo "✅ TUDO PRONTO! Agora é só rodar o ComfyUI."
+# Instalar requirements em paralelo
+for repo in "${NODES[@]}"; do
+    folder=$(basename "$repo" .git)
+    if [ -f "$folder/requirements.txt" ]; then
+        pip install -r "$folder/requirements.txt" -q &
+    fi
+done
+wait
+
+log "✅ Wave 1 completa!"
+
+# =====================================================
+# WAVE 2: PEQUENO (< 500MB cada)
+# =====================================================
+log "🌊 WAVE 2: Pequenos (< 500MB)"
+
+check_space 5 || exit 1
+
+DOWNLOADS_PEQUENO=(
+    "/workspace/ComfyUI/models/upscale_models/RealESRGAN_x4plus.pth:https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus.pth"
+    "/workspace/ComfyUI/models/upscale_models/RealESRGAN_x4plus_anime_6B.pth:https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus_anime_6B.pth"
+    "/workspace/ComfyUI/models/controlnet/dpt_hybrid-midas-501f9c5e.pt:https://huggingface.co/lllyasviel/Annotators/resolve/main/dpt_hybrid-midas-501f9c5e.pt"
+    "/workspace/ComfyUI/models/controlnet/sketch.pth:https://huggingface.co/lllyasviel/Annotators/resolve/main/sketch.pth"
+    "/workspace/ComfyUI/models/insightface/genderage.onnx:https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/genderage.onnx"
+    "/workspace/ComfyUI/models/insightface/2d106det.onnx:https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/2d106det.onnx"
+    "/workspace/ComfyUI/models/insightface/glintr100.onnx:https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/glintr100.onnx"
+)
+
+for item in "${DOWNLOADS_PEQUENO[@]}"; do
+    path="${item%%:*}"
+    url="${item##*:}"
+    if [ ! -f "$path" ]; then
+        aria2c -x 8 -s 8 -d "$(dirname "$path")" -o "$(basename "$path")" "$url" &
+    fi
+done
+wait
+
+log "✅ Wave 2 completa!"
+
+# =====================================================
+# WAVE 3: MÉDIO (500MB - 2GB)
+# =====================================================
+log "🌊 WAVE 3: Médio (500MB - 2GB)"
+
+check_space 10 || exit 1
+
+DOWNLOADS_MEDIO=(
+    "/workspace/ComfyUI/models/vaes/wan_2.1_vae.safetensors:https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
+    "/workspace/ComfyUI/models/vaes/ae.safetensors:https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+    "/workspace/ComfyUI/models/clip_vision/clip_vision_h.safetensors:https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors"
+    "/workspace/ComfyUI/models/clip_vision/siglip-so400m-patch14-384.safetensors:https://huggingface.co/google/siglip-so400m-patch14-384/resolve/main/model.safetensors"
+    "/workspace/ComfyUI/models/ipadapter/ip-adapter_sd15.safetensors:https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sd15.safetensors"
+    "/workspace/ComfyUI/models/ipadapter/ip-adapter_sdxl.safetensors:https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sdxl.safetensors"
+    "/workspace/ComfyUI/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors:https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-plus_sdxl_vit-h.safetensors"
+    "/workspace/ComfyUI/models/checkpoints/fish-speech.bin:https://huggingface.co/fishaudio/fish-speech-1.4/resolve/main/fish-speech-1.4-checkpoint.pth"
+)
+
+for item in "${DOWNLOADS_MEDIO[@]}"; do
+    path="${item%%:*}"
+    url="${item##*:}"
+    if [ ! -f "$path" ]; then
+        aria2c -x 16 -s 16 -d "$(dirname "$path")" -o "$(basename "$path")" "$url" &
+    fi
+done
+wait
+
+log "✅ Wave 3 completa!"
+
+# =====================================================
+# WAVE 4: PESADO (> 2GB) - por último
+# =====================================================
+log "🌊 WAVE 4: Pesado (> 2GB) -最后一个"
+
+check_space 25 || exit 1
+
+DOWNLOADS_PESADO=(
+    "/workspace/ComfyUI/models/checkpoints/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors:https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
+    "/workspace/ComfyUI/models/checkpoints/flux1-dev-fp8.safetensors:https://huggingface.co/lllyasviel/flux1_dev/resolve/main/flux1-dev-fp8.safetensors"
+)
+
+for item in "${DOWNLOADS_PESADO[@]}"; do
+    path="${item%%:*}"
+    url="${item##*:}"
+    if [ ! -f "$path" ]; then
+        # Mais conexões pro arquivo grande
+        aria2c -x 16 -s 16 -d "$(dirname "$path")" -o "$(basename "$path")" "$url" &
+    fi
+done
+wait
+
+log "✅ Wave 4 completa!"
+
+# =====================================================
+# FINAL
+# =====================================================
+log "🎉 INSTALAÇÃO COMPLETA!"
+log "Disco剩余: $(df -h /workspace | awk 'NR==2 {print $4}')"
+cd /workspace/ComfyUI
+echo ""
+echo "Para rodar: python3 main.py --listen 0.0.0.0 --port 8188"
