@@ -3,8 +3,18 @@ set -e
 
 echo "🚀 Iniciando Instalação Universal (O Plano de 1 Milhão)..."
 
-# Criar pastas
-mkdir -p /workspace/ComfyUI/models/{checkpoints,vaes,clip_vision,upscale_models,ipadapter,controlnet,insightface}
+# === Função de utilidade ===
+ensure_hf_cli() {
+    if ! command -v huggingface-cli &> /dev/null; then
+        echo "📦 huggingface-cli não encontrado. Instalando..."
+        pip install --no-cache-dir huggingface_hub
+        # Opcional: aceleração de download (muito rápido!)
+        pip install --no-cache-dir hf_transfer
+        export HF_HUB_ENABLE_HF_TRANSFER=1
+    else
+        echo "✅ huggingface-cli já instalado."
+    fi
+}
 
 # === 1. ComfyUI Base ===
 if [ ! -d "/workspace/ComfyUI" ]; then
@@ -15,44 +25,69 @@ else
     echo "✅ ComfyUI já instalado."
 fi
 
-# === 2. CHECKPOINTS ===
-echo "🖼️ Baixando Checkpoints..."
-wget -nc -P /workspace/ComfyUI/models/checkpoints https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors
-wget -nc -P /workspace/ComfyUI/models/checkpoints https://huggingface.co/lllyasviel/flux1_dev/resolve/main/flux1-dev-fp8.safetensors
+# Garantir que o diretório existe
+mkdir -p /workspace/ComfyUI/models/{checkpoints,vaes,clip_vision,upscale_models,ipadapter,controlnet,insightface}
 
-# === 3. VAEs ===
+# === 2. Garantir que huggingface-cli está pronto ===
+ensure_hf_cli
+
+# === 3. DOWNLOADS COM HUGGINGFACE-CLI (modelos que exigem autenticação ou são complexos) ===
+
+echo "🖼️ Baixando Checkpoints via Hugging Face..."
+huggingface-cli download RunDiffusion/Juggernaut-XL-v9 Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors \
+    --local-dir /workspace/ComfyUI/models/checkpoints --local-dir-use-symlinks False
+
+huggingface-cli download lllyasviel/flux1_dev flux1-dev-fp8.safetensors \
+    --local-dir /workspace/ComfyUI/models/checkpoints --local-dir-use-symlinks False
+
 echo "🎨 Baixando VAEs..."
-wget -nc -O /workspace/ComfyUI/models/vaes/wan_2.1_vae.safetensors https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
-wget -nc -O /workspace/ComfyUI/models/vaes/ae.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors
+huggingface-cli download Comfy-Org/Wan_2.1_ComfyUI_repackaged wan_2.1_vae.safetensors \
+    --local-dir /workspace/ComfyUI/models/vaes --local-dir-use-symlinks False
 
-# === 4. CLIP VISION ===
+huggingface-cli download Comfy-Org/z_image_turbo ae.safetensors \
+    --local-dir /workspace/ComfyUI/models/vaes --local-dir-use-symlinks False
+
 echo "👁️ Baixando CLIP Vision..."
-wget -nc -O /workspace/ComfyUI/models/clip_vision/clip_vision_h.safetensors https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
-wget -nc -O /workspace/ComfyUI/models/clip_vision/siglip-so400m-patch14-384.safetensors https://huggingface.co/google/siglip-so400m-patch14-384/resolve/main/model.safetensors
+huggingface-cli download Comfy-Org/Wan_2.1_ComfyUI_repackaged clip_vision_h.safetensors \
+    --local-dir /workspace/ComfyUI/models/clip_vision --local-dir-use-symlinks False
 
-# === 5. UPSCALERS ===
-echo "🔍 Baixando Upscalers..."
+huggingface-cli download google/siglip-so400m-patch14-384 model.safetensors \
+    --local-dir /workspace/ComfyUI/models/clip_vision --local-dir-use-symlinks False \
+    --filename siglip-so400m-patch14-384.safetensors
+
+echo "🔗 Baixando IP-Adapter..."
+huggingface-cli download h94/IP-Adapter ip-adapter_sd15.safetensors \
+    --local-dir /workspace/ComfyUI/models/ipadapter --local-dir-use-symlinks False
+
+huggingface-cli download h94/IP-Adapter ip-adapter_sdxl.safetensors \
+    --local-dir /workspace/ComfyUI/models/ipadapter --local-dir-use-symlinks False
+
+huggingface-cli download h94/IP-Adapter ip-adapter-plus_sdxl_vit-h.safetensors \
+    --local-dir /workspace/ComfyUI/models/ipadapter --local-dir-use-symlinks False
+
+echo "🎛️ Baixando ControlNets..."
+huggingface-cli download lllyasviel/Annotators dpt_hybrid-midas-501f9c5e.pt \
+    --local-dir /workspace/ComfyUI/models/controlnet --local-dir-use-symlinks False
+
+huggingface-cli download lllyasviel/Annotators sketch.pth \
+    --local-dir /workspace/ComfyUI/models/controlnet --local-dir-use-symlinks False
+
+echo "👤 Baixando InsightFace..."
+huggingface-cli download MonsterMMORPG/tools genderage.onnx \
+    --local-dir /workspace/ComfyUI/models/insightface --local-dir-use-symlinks False
+
+huggingface-cli download MonsterMMORPG/tools 2d106det.onnx \
+    --local-dir /workspace/ComfyUI/models/insightface --local-dir-use-symlinks False
+
+huggingface-cli download MonsterMMORPG/tools glintr100.onnx \
+    --local-dir /workspace/ComfyUI/models/insightface --local-dir-use-symlinks False
+
+# === 4. DOWNLOADS COM WGET (links diretos públicos sem autenticação) ===
+echo "🔍 Baixando Upscalers (via wget)..."
 wget -nc -P /workspace/ComfyUI/models/upscale_models https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus.pth
 wget -nc -P /workspace/ComfyUI/models/upscale_models https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus_anime_6B.pth
 
-# === 6. IP-ADAPTER (para IPAdapter_plus) ===
-echo "🔗 Baixando IP-Adapter..."
-wget -nc -P /workspace/ComfyUI/models/ipadapter https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sd15.safetensors
-wget -nc -P /workspace/ComfyUI/models/ipadapter https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter_sdxl.safetensors
-wget -nc -P /workspace/ComfyUI/models/ipadapter https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-plus_sdxl_vit-h.safetensors
-
-# === 7. CONTROLNET (para Impact Pack, Fooocus, etc.) ===
-echo "🎛️ Baixando ControlNets..."
-wget -nc -P /workspace/ComfyUI/models/controlnet https://huggingface.co/lllyasviel/Annotators/resolve/main/dpt_hybrid-midas-501f9c5e.pt
-wget -nc -P /workspace/ComfyUI/models/controlnet https://huggingface.co/lllyasviel/Annotators/resolve/main/sketch.pth
-
-# === 8. INSIGHTFACE (para LivePortrait, IPAdapter Flux) ===
-echo "👤 Baixando InsightFace..."
-wget -nc -P /workspace/ComfyUI/models/insightface https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/genderage.onnx
-wget -nc -P /workspace/ComfyUI/models/insightface https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/2d106det.onnx
-wget -nc -P /workspace/ComfyUI/models/insightface https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2/glintr100.onnx
-
-# === 9. CUSTOM NODES (agora sim, com git clone) ===
+# === 5. CUSTOM NODES ===
 echo "🧩 Instalando Custom Nodes..."
 CUSTOM_NODES_DIR="/workspace/ComfyUI/custom_nodes"
 mkdir -p "$CUSTOM_NODES_DIR"
